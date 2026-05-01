@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Host</title>
+    </head>
+
+    <body>
+        <div id="game"></div>
+    </body>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/9.0.6/signalr.min.js"></script>
+    <script>
+        let connection = null;
+
+        function updateInfo(room) {
+
+            var result =
+            `
+                <h1>Комната: ${room.id}</h1>
+                <h3>Владелец: ${room.hostConnectionId}</h3>
+
+                <div>
+            `;
+
+            Object.entries(room.playerIdToName).forEach(([connectionId, name]) => {
+                result += `<i>${name} : ${connectionId}</i><br>`;
+            });
+
+            result += `</div>`;
+
+            document.getElementById("game").innerHTML = result;
+        }
+
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl("http://testsignalrxap.runasp.net/game", {
+                skipNegotiation: true,
+                transport: signalR.HttpTransportType.WebSockets
+            })
+            .withAutomaticReconnect()
+            .build();
+        
+        connection.on("HostConnected", async (room) => {
+            updateInfo(room);
+        });
+
+        connection.on("PlayerConnected", async (room) => {
+            updateInfo(room);
+        });
+
+        connection.on("PlayerDisconnected", async (room) => {
+            updateInfo(room);
+        });
+
+        try {
+            connection.start();
+            console.log("SignalR connected");
+        } catch (err) {
+            console.error("SignalR Error:", err);
+        }
+    </script>
+</html>
