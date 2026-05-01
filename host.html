@@ -34,10 +34,7 @@
         }
 
         connection = new signalR.HubConnectionBuilder()
-            .withUrl("http://testsignalrxap.runasp.net/game", {
-                skipNegotiation: true,
-                transport: signalR.HttpTransportType.WebSockets
-            })
+            .withUrl("http://testsignalrxap.runasp.net/game")
             .withAutomaticReconnect()
             .build();
         
