@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>360° Сферический сканер</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #fff;
+            touch-action: none;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        #video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 0;
+            transform: scaleX(-1);
+        }
+        #three-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+            display: block;
+        }
+        .ui-overlay {
+            position: fixed;
+            z-index: 10;
+            pointer-events: none;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+        .ui-overlay > * {
+            pointer-events: auto;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 30px;
+            height: 30px;
+            transform: translate(-50%, -50%);
+            opacity: 0.8;
+        }
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 2px;
+        }
+        #crosshair::before {
+            width: 2px;
+            height: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        #crosshair::after {
+            width: 100%;
+            height: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .crosshair-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 6px;
+            height: 6px;
+            background: #ff3b30;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 12px rgba(255, 59, 48, 0.6);
+        }
+        #ui-bottom {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+            padding: 0 20px;
+        }
+        #counter {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 10px 24px;
+            border-radius: 40px;
+            font-size: 18px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            text-align: center;
+            width: fit-content;
+            margin: 0 auto;
+        }
+        #counter span {
+            color: #34c759;
+            font-weight: 600;
+        }
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 14px;
+            width: 100%;
+            max-width: 420px;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 40px;
+            padding: 14px 28px;
+            font-size: 17px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            flex: 1;
+            min-width: 130px;
+            text-align: center;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .btn:active {
+            transform: scale(0.94);
+            opacity: 0.8;
+        }
+        .btn-primary {
+            background: #007aff;
+            border-color: #007aff;
+            color: #fff;
+        }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            transform: none;
+        }
+        .btn-success {
+            background: #34c759;
+            border-color: #34c759;
+        }
+        .btn-success:disabled {
+            opacity: 0.4;
+            transform: none;
+            pointer-events: none;
+        }
+        #status-msg {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.6);
+            text-align: center;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 16px;
+            border-radius: 30px;
+            backdrop-filter: blur(4px);
+            min-height: 30px;
+        }
+        @media (max-width: 480px) {
+            .btn { padding: 12px 16px; font-size: 15px; min-width: 100px; }
+            #counter { font-size: 15px; padding: 8px 18px; }
+        }
+        #loader {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            flex-direction: column;
+            gap: 20px;
+        }
+        #loader.active {
+            display: flex;
+        }
+        #loader .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(255,255,255,0.2);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loader p {
+            font-size: 18px;
+            font-weight: 400;
+            letter-spacing: 0.3px;
+            text-align: center;
+            padding: 0 20px;
+        }
+        .toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(8px);
+            padding: 12px 28px;
+            border-radius: 40px;
+            font-size: 16px;
+            z-index: 50;
+            border: 1px solid rgba(255,255,255,0.1);
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #permission-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(12px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            flex-direction: column;
+            gap: 20px;
+            padding: 40px;
+            text-align: center;
+        }
+        #permission-overlay.active {
+            display: flex;
+        }
+        #permission-overlay h2 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        #permission-overlay p {
+            font-size: 16px;
+            opacity: 0.7;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        #permission-overlay .btn {
+            max-width: 280px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="three-canvas"></canvas>
+
+    <div class="ui-overlay" id="ui">
+        <div id="crosshair"><div class="crosshair-dot"></div></div>
+        <div id="ui-bottom">
+            <div id="counter">📸 Собрано: <span id="captured-count">0</span> / 26</div>
+            <div class="btn-group">
+                <button class="btn btn-primary" id="btn-start">▶ Начать сканирование</button>
+                <button class="btn btn-success" id="btn-export" disabled>⬇ Скачать куб</button>
+            </div>
+            <div id="status-msg">Нажмите «Начать сканирование»</div>
+        </div>
+    </div>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p id="loader-text">Запуск...</p>
+    </div>
+
+    <div id="permission-overlay">
+        <h2>🔄 Разрешите доступ</h2>
+        <p>Для работы сканера необходимо разрешить использование датчиков движения и камеры</p>
+        <button class="btn btn-primary" id="btn-permission">Разрешить</button>
+    </div>
+
+    <div id="toast" class="toast" style="opacity:0;">Готово</div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.126.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- DOM refs ---
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('three-canvas');
+        const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loader-text');
+        const toast = document.getElementById('toast');
+        const statusMsg = document.getElementById('status-msg');
+        const capturedSpan = document.getElementById('captured-count');
+        const btnStart = document.getElementById('btn-start');
+        const btnExport = document.getElementById('btn-export');
+        const permissionOverlay = document.getElementById('permission-overlay');
+        const btnPermission = document.getElementById('btn-permission');
+
+        // --- state ---
+        let cameraReady = false;
+        let captureEnabled = false;
+        let captures = [];
+        const TARGET_COUNT = 26;
+        let capturedCount = 0;
+        let scene, camera, renderer;
+        let targetMeshes = [];
+        let cameraDummy, sphereGroup;
+        let isCapturing = false;
+        let motionReady = false;
+        let motionListenerAdded = false;
+
+        // --- helpers ---
+        function showToast(msg, duration = 2000) {
+            toast.textContent = msg;
+            toast.style.opacity = '1';
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
+        }
+
+        function updateUI() {
+            capturedSpan.textContent = capturedCount;
+            btnExport.disabled = (capturedCount < 26);
+            if (capturedCount === 26) {
+                statusMsg.textContent = '✅ Все цели собраны! Скачайте кубическую карту.';
+            } else if (capturedCount > 0) {
+                statusMsg.textContent = `🎯 Осталось целей: ${26 - capturedCount}`;
+            }
+        }
+
+        function setLoader(active, text = 'Запуск...') {
+            if (active) {
+                loader.classList.add('active');
+                loaderText.textContent = text;
+            } else {
+                loader.classList.remove('active');
+            }
+        }
+
+        // --- three.js setup ---
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.background = null;
+
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas,
+                alpha: true,
+                antialias: true
+            });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+            camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 1000);
+            camera.position.set(0, 0, 0);
+
+            sphereGroup = new THREE.Group();
+            scene.add(sphereGroup);
+
+            cameraDummy = new THREE.Object3D();
+            scene.add(cameraDummy);
+            cameraDummy.add(camera);
+            camera.position.set(0, 0, 0);
+
+            createTargets();
+
+            window.addEventListener('resize', onResize);
+        }
+
+        function createTargets() {
+            const radius = 6;
+            const geometry = new THREE.SphereGeometry(0.35, 16, 16);
+            const positions = [];
+
+            // Экватор: 10 точек
+            for (let i = 0; i < 10; i++) {
+                const theta = (i / 10) * Math.PI * 2;
+                const phi = Math.PI / 2;
+                positions.push(new THREE.Vector3(
+                    radius * Math.sin(phi) * Math.cos(theta),
+                    radius * Math.cos(phi),
+                    radius * Math.sin(phi) * Math.sin(theta)
+                ));
+            }
+            // Верхний ярус: 8 точек
+            for (let i = 0; i < 8; i++) {
+                const theta = (i / 8) * Math.PI * 2;
+                const phi = Math.PI / 2 - 0.6;
+                positions.push(new THREE.Vector3(
+                    radius * Math.sin(phi) * Math.cos(theta),
+                    radius * Math.cos(phi),
+                    radius * Math.sin(phi) * Math.sin(theta)
+                ));
+            }
+            // Нижний ярус: 8 точек
+            for (let i = 0; i < 8; i++) {
+                const theta = (i / 8) * Math.PI * 2;
+                const phi = Math.PI / 2 + 0.6;
+                positions.push(new THREE.Vector3(
+                    radius * Math.sin(phi) * Math.cos(theta),
+                    radius * Math.cos(phi),
+                    radius * Math.sin(phi) * Math.sin(theta)
+                ));
+            }
+
+            positions.forEach((pos) => {
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x007aff,
+                    emissive: 0x007aff,
+                    emissiveIntensity: 0.3,
+                    roughness: 0.2,
+                    metalness: 0.1
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.copy(pos);
+                mesh.userData.initialPos = pos.clone();
+                mesh.userData.captured = false;
+                sphereGroup.add(mesh);
+                targetMeshes.push(mesh);
+            });
+
+            const ambient = new THREE.AmbientLight(0x404060);
+            scene.add(ambient);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(1, 2, 1);
+            scene.add(dirLight);
+            const backLight = new THREE.DirectionalLight(0x4466ff, 0.3);
+            backLight.position.set(-1, -0.5, -1);
+            scene.add(backLight);
+        }
+
+        function onResize() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        // --- Обработчик данных с датчиков движения (исправленный для iOS) ---
+        function handleMotion(e) {
+            if (!cameraReady) return;
+            
+            // Получаем данные из rotationRate (угловая скорость)
+            const alpha = e.rotationRate?.alpha || 0;
+            const beta = e.rotationRate?.beta || 0;
+            const gamma = e.rotationRate?.gamma || 0;
+
+            // Для более точного отслеживания используем акселерометр
+            // для определения ориентации в пространстве
+            const accel = e.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
+            
+            // Преобразуем в кватернион для Three.js
+            // Используем комбинацию гироскопа и акселерометра
+            const q = new THREE.Quaternion();
+            const euler = new THREE.Euler();
+            
+            // На iOS данные rotationRate дают угловую скорость,
+            // но для стабильной ориентации лучше использовать
+            // accelerationIncludingGravity для определения наклона
+            if (accel.x !== 0 || accel.y !== 0 || accel.z !== 0) {
+                // Определяем ориентацию по гравитации
+                const pitch = Math.atan2(-accel.x, Math.sqrt(accel.y * accel.y + accel.z * accel.z));
+                const roll = Math.atan2(accel.y, accel.z);
+                
+                // Альфа (азимут) получаем из гироскопа или используем предыдущее значение
+                // Для простоты используем alpha из rotationRate
+                const alphaDeg = alpha * 0.1; // масштабируем для плавности
+                
+                euler.set(
+                    pitch,
+                    alphaDeg,
+                    roll,
+                    'YXZ'
+                );
+            } else {
+                // Fallback: используем только rotationRate
+                euler.set(
+                    THREE.MathUtils.degToRad(beta * 0.1),
+                    THREE.MathUtils.degToRad(alpha * 0.1),
+                    THREE.MathUtils.degToRad(-gamma * 0.1),
+                    'YXZ'
+                );
+            }
+            
+            q.setFromEuler(euler);
+            cameraDummy.quaternion.copy(q);
+            
+            if (!motionReady) {
+                motionReady = true;
+                setLoader(false);
+                showToast('✅ Датчики движения активированы', 1500);
+                statusMsg.textContent = 'Наводите прицел на синие цели';
+            }
+        }
+
+        // --- захват кадра ---
+        function captureFrame(targetMesh) {
+            if (isCapturing || !video.videoWidth) return;
+            isCapturing = true;
+
+            const w = Math.min(video.videoWidth, 1920);
+            const h = Math.min(video.videoHeight, 1080);
+            const canvas2 = document.createElement('canvas');
+            canvas2.width = w;
+            canvas2.height = h;
+            const ctx = canvas2.getContext('2d');
+            ctx.drawImage(video, 0, 0, w, h);
+            
+            const texture = new THREE.CanvasTexture(canvas2);
+            texture.needsUpdate = true;
+
+            const planeGeo = new THREE.PlaneGeometry(1.8, 1.8);
+            const planeMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            const plane = new THREE.Mesh(planeGeo, planeMat);
+            const pos = targetMesh.userData.initialPos.clone();
+            plane.position.copy(pos);
+            const dir = pos.clone().normalize();
+            plane.quaternion.setFromUnitVectors(
+                new THREE.Vector3(0, 0, 1),
+                dir
+            );
+            sphereGroup.add(plane);
+
+            targetMesh.material.color.setHex(0x34c759);
+            targetMesh.material.emissive.setHex(0x34c759);
+            targetMesh.userData.captured = true;
+            
+            captures.push({ pos: pos, texture: texture, plane: plane, mesh: targetMesh });
+            capturedCount++;
+            updateUI();
+
+            showToast(`📸 Захвачено! ${capturedCount}/26`, 1200);
+            isCapturing = false;
+        }
+
+        // --- проверка прицела ---
+        function checkAim() {
+            if (!captureEnabled || capturedCount >= 26) return;
+
+            const raycaster = new THREE.Raycaster();
+            const center = new THREE.Vector2(0, 0);
+            raycaster.setFromCamera(center, camera);
+
+            const targets = targetMeshes.filter(m => !m.userData.captured);
+            if (targets.length === 0) return;
+
+            const intersects = raycaster.intersectObjects(targets);
+            if (intersects.length > 0) {
+                const hit = intersects[0].object;
+                const angle = intersects[0].angle;
+                if (angle < 0.0524) { // ~3 градуса
+                    captureFrame(hit);
+                }
+            }
+        }
+
+        // --- Экспорт кубической карты ---
+        function exportCubeMap() {
+            if (capturedCount < 26) {
+                showToast('Соберите все 26 кадров!', 2000);
+                return;
+            }
+
+            setLoader(true, 'Генерация кубической карты...');
+            
+            setTimeout(() => {
+                try {
+                    const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(1024, {
+                        format: THREE.RGBAFormat,
+                        generateMipmaps: false,
+                        minFilter: THREE.LinearFilter,
+                        magFilter: THREE.LinearFilter,
+                    });
+
+                    const tempScene = new THREE.Scene();
+                    const tempGroup = new THREE.Group();
+                    captures.forEach(cap => {
+                        const plane = cap.plane.clone();
+                        tempGroup.add(plane);
+                    });
+                    tempScene.add(tempGroup);
+
+                    const cubeCamera = new THREE.CubeCamera(0.1, 1000, cubeRenderTarget);
+                    cubeCamera.position.set(0, 0, 0);
+                    cubeCamera.updateMatrixWorld();
+                    cubeCamera.update(renderer, tempScene);
+
+                    const names = ['right', 'left', 'up', 'down', 'front', 'back'];
+                    const faces = ['px', 'nx', 'py', 'ny', 'pz', 'nz'];
+
+                    faces.forEach((face, idx) => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 1024;
+                        canvas.height = 1024;
+                        const ctx = canvas.getContext('2d');
+                        const imgData = cubeRenderTarget.texture.image[face];
+                        if (imgData) {
+                            ctx.putImageData(imgData, 0, 0);
+                            const link = document.createElement('a');
+                            link.download = `${names[idx]}.png`;
+                            link.href = canvas.toDataURL('image/png');
+                            link.click();
+                        }
+                    });
+
+                    setLoader(false);
+                    showToast('✅ 6 файлов куб-карты скачаны!', 4000);
+                } catch (e) {
+                    setLoader(false);
+                    showToast('Ошибка экспорта: ' + e.message, 3000);
+                    console.error(e);
+                }
+            }, 300);
+        }
+
+        // --- инициализация камеры ---
+        async function startCamera() {
+            try {
+                setLoader(true, 'Запрос доступа к камере...');
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                });
+                
+                video.srcObject = stream;
+                await video.play();
+                cameraReady = true;
+                
+                if (!motionListenerAdded) {
+                    window.addEventListener('devicemotion', handleMotion);
+                    motionListenerAdded = true;
+                }
+                
+                setLoader(true, 'Ожидание датчиков движения...');
+                statusMsg.textContent = 'Поворачивайте телефон для калибровки...';
+                
+                let waitCount = 0;
+                const waitInterval = setInterval(() => {
+                    waitCount++;
+                    if (motionReady || waitCount > 30) {
+                        clearInterval(waitInterval);
+                        if (!motionReady) {
+                            setLoader(false);
+                            showToast('⚠️ Датчики не активны, но камера работает', 2500);
+                            statusMsg.textContent = 'Попробуйте повернуть телефон';
+                        }
+                        captureEnabled = true;
+                        btnStart.textContent = '✅ Активно';
+                        btnStart.disabled = true;
+                        if (motionReady) {
+                            statusMsg.textContent = 'Наводите прицел на синие цели';
+                        }
+                        showToast('Камера готова!', 1500);
+                    }
+                }, 200);
+                
+            } catch (err) {
+                setLoader(false);
+                alert('Ошибка доступа к камере: ' + err.message);
+                btnStart.disabled = false;
+                btnStart.textContent = '▶ Начать сканирование';
+                statusMsg.textContent = '❌ Ошибка камеры: ' + err.message;
+            }
+        }
+
+        // --- Запрос разрешения для DeviceMotionEvent (правильный для iOS) ---
+        async function requestMotionPermission() {
+            return new Promise((resolve) => {
+                if (typeof DeviceMotionEvent !== 'undefined' && 
+                    typeof DeviceMotionEvent.requestPermission === 'function') {
+                    
+                    permissionOverlay.classList.add('active');
+                    
+                    btnPermission.onclick = async () => {
+                        try {
+                            permissionOverlay.classList.remove('active');
+                            setLoader(true, 'Запрос разрешения датчиков...');
+                            
+                            const response = await DeviceMotionEvent.requestPermission();
+                            if (response === 'granted') {
+                                window.addEventListener('devicemotion', handleMotion);
+                                motionListenerAdded = true;
+                                resolve(true);
+                            } else {
+                                alert('Для работы необходим доступ к датчикам движения');
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            console.error('Permission error:', e);
+                            resolve(false);
+                        }
+                    };
+                } else {
+                    // Для Android или десктопа
+                    window.addEventListener('devicemotion', handleMotion);
+                    motionListenerAdded = true;
+                    resolve(true);
+                }
+            });
+        }
+
+        // --- UI ---
+        btnStart.addEventListener('click', async () => {
+            btnStart.disabled = true;
+            btnStart.textContent = '⏳ Запуск...';
+            
+            // Запрашиваем доступ к датчикам движения
+            const motionOk = await requestMotionPermission();
+            if (!motionOk) {
+                btnStart.disabled = false;
+                btnStart.textContent = '▶ Начать сканирование';
+                showToast('❌ Нет доступа к датчикам', 3000);
+                return;
+            }
+            
+            // Затем камеру
+            await startCamera();
+        });
+
+        btnExport.addEventListener('click', exportCubeMap);
+
+        // --- loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (cameraReady && captureEnabled) {
+                checkAim();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- start ---
+        initThree();
+        animate();
+        updateUI();
+
+        console.log('Мобильный 360 сканер готов');
+    </script>
+</body>
+</html>
