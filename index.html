@@ -329,6 +329,10 @@
         let motionReady = false;
         let motionListenerAdded = false;
 
+        // --- Фильтр для стабилизации ---
+        let filteredQuat = new THREE.Quaternion();
+        let filterAlpha = 0.98; // комплементарный фильтр (высокое значение = больше доверия гироскопу)
+
         // --- helpers ---
         function showToast(msg, duration = 2000) {
             toast.textContent = msg;
@@ -381,6 +385,9 @@
             scene.add(cameraDummy);
             cameraDummy.add(camera);
             camera.position.set(0, 0, 0);
+
+            // Инициализируем фильтр
+            filteredQuat.identity();
 
             createTargets();
 
@@ -457,54 +464,60 @@
             renderer.setSize(width, height);
         }
 
-        // --- Обработчик данных с датчиков движения (исправленный для iOS) ---
+        // --- Обработчик данных с датчиков движения (СТАБИЛЬНАЯ ВЕРСИЯ) ---
         function handleMotion(e) {
             if (!cameraReady) return;
             
-            // Получаем данные из rotationRate (угловая скорость)
+            // Получаем данные с акселерометра (для определения наклона)
+            const accel = e.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
+            const accelNorm = Math.sqrt(accel.x*accel.x + accel.y*accel.y + accel.z*accel.z);
+            if (accelNorm < 0.1) return; // игнорируем шум
+            
+            // Нормализуем акселерометр
+            const ax = accel.x / accelNorm;
+            const ay = accel.y / accelNorm;
+            const az = accel.z / accelNorm;
+            
+            // Вычисляем кватернион из акселерометра (ориентация по гравитации)
+            const quatAccel = new THREE.Quaternion();
+            const eulerAccel = new THREE.Euler();
+            
+            // Определяем pitch и roll из акселерометра
+            const pitch = Math.atan2(-ax, Math.sqrt(ay*ay + az*az));
+            const roll = Math.atan2(ay, az);
+            
+            eulerAccel.set(pitch, 0, roll, 'YXZ');
+            quatAccel.setFromEuler(eulerAccel);
+            
+            // Получаем данные гироскопа (угловая скорость)
             const alpha = e.rotationRate?.alpha || 0;
             const beta = e.rotationRate?.beta || 0;
             const gamma = e.rotationRate?.gamma || 0;
-
-            // Для более точного отслеживания используем акселерометр
-            // для определения ориентации в пространстве
-            const accel = e.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
             
-            // Преобразуем в кватернион для Three.js
-            // Используем комбинацию гироскопа и акселерометра
-            const q = new THREE.Quaternion();
-            const euler = new THREE.Euler();
+            // Преобразуем в углы (радианы)
+            const dt = 1/60; // предполагаем 60fps
+            const gyroEuler = new THREE.Euler(
+                THREE.MathUtils.degToRad(beta * dt),
+                THREE.MathUtils.degToRad(alpha * dt),
+                THREE.MathUtils.degToRad(-gamma * dt),
+                'YXZ'
+            );
+            const quatGyro = new THREE.Quaternion().setFromEuler(gyroEuler);
             
-            // На iOS данные rotationRate дают угловую скорость,
-            // но для стабильной ориентации лучше использовать
-            // accelerationIncludingGravity для определения наклона
-            if (accel.x !== 0 || accel.y !== 0 || accel.z !== 0) {
-                // Определяем ориентацию по гравитации
-                const pitch = Math.atan2(-accel.x, Math.sqrt(accel.y * accel.y + accel.z * accel.z));
-                const roll = Math.atan2(accel.y, accel.z);
-                
-                // Альфа (азимут) получаем из гироскопа или используем предыдущее значение
-                // Для простоты используем alpha из rotationRate
-                const alphaDeg = alpha * 0.1; // масштабируем для плавности
-                
-                euler.set(
-                    pitch,
-                    alphaDeg,
-                    roll,
-                    'YXZ'
-                );
-            } else {
-                // Fallback: используем только rotationRate
-                euler.set(
-                    THREE.MathUtils.degToRad(beta * 0.1),
-                    THREE.MathUtils.degToRad(alpha * 0.1),
-                    THREE.MathUtils.degToRad(-gamma * 0.1),
-                    'YXZ'
-                );
-            }
+            // Применяем гироскопическое обновление к фильтрованному кватерниону
+            filteredQuat.multiply(quatGyro);
             
-            q.setFromEuler(euler);
-            cameraDummy.quaternion.copy(q);
+            // Комплементарный фильтр: смешиваем акселерометр и гироскоп
+            // Для поворота по вертикали (pitch/roll) доверяем акселерометру
+            // Для поворота по горизонтали (yaw) доверяем гироскопу
+            // Это предотвращает "бешеное" вращение
+            
+            // Разделяем кватернион на вертикальную и горизонтальную составляющие
+            // Упрощенный подход: используем фильтр для всего кватерниона
+            filteredQuat.slerp(quatAccel, 1 - filterAlpha);
+            
+            // Применяем к камере
+            cameraDummy.quaternion.copy(filteredQuat);
             
             if (!motionReady) {
                 motionReady = true;
