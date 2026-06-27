@@ -2,8 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>360° Сферический сканер</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>360 Панорама - Съёмка</title>
     <style>
         * {
             margin: 0;
@@ -11,87 +11,89 @@
             box-sizing: border-box;
         }
         body {
-            background: #000;
-            overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #0a0a0a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+            -webkit-user-select: none;
             touch-action: none;
-            position: fixed;
-            width: 100%;
-            height: 100%;
+        }
+        #camera-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
         }
         #video {
-            position: fixed;
-            top: 0;
-            left: 0;
             width: 100%;
             height: 100%;
             object-fit: cover;
-            z-index: 0;
             transform: scaleX(-1);
         }
-        #three-canvas {
-            position: fixed;
+        /* Затемнение по краям для лучшего фокуса */
+        #overlay {
+            position: absolute;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: 1;
             pointer-events: none;
-            display: block;
+            background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.5) 100%);
         }
-        .ui-overlay {
-            position: fixed;
-            z-index: 10;
-            pointer-events: none;
-            width: 100%;
-            height: 100%;
-            top: 0;
-            left: 0;
-        }
-        .ui-overlay > * {
-            pointer-events: auto;
-        }
-        #crosshair {
+        /* Кружки для наведения */
+        .target-dot {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 30px;
-            height: 30px;
-            transform: translate(-50%, -50%);
-            opacity: 0.8;
-        }
-        #crosshair::before,
-        #crosshair::after {
-            content: '';
-            position: absolute;
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 2px;
-        }
-        #crosshair::before {
-            width: 2px;
-            height: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-        }
-        #crosshair::after {
-            width: 100%;
-            height: 2px;
-            top: 50%;
-            transform: translateY(-50%);
-        }
-        .crosshair-dot {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 6px;
-            height: 6px;
-            background: #ff3b30;
             border-radius: 50%;
+            border: 3px solid rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.15);
+            width: 80px;
+            height: 80px;
             transform: translate(-50%, -50%);
-            box-shadow: 0 0 12px rgba(255, 59, 48, 0.6);
+            pointer-events: none;
+            box-shadow: 0 0 30px rgba(0, 150, 255, 0.3);
+            transition: all 0.2s ease;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: rgba(255,255,255,0.7);
+            text-align: center;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0,0,0,0.8);
         }
-        #ui-bottom {
+        .target-dot.active {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.25);
+            box-shadow: 0 0 50px rgba(0, 255, 136, 0.5);
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+        .target-dot.done {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.4);
+            box-shadow: 0 0 40px rgba(0, 255, 136, 0.3);
+        }
+        .target-dot .num {
+            font-size: 20px;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(0,0,0,0.9);
+        }
+        .target-dot .status-icon {
+            position: absolute;
+            bottom: -25px;
+            font-size: 14px;
+            background: rgba(0,0,0,0.7);
+            padding: 2px 10px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+        /* UI элементы */
+        #ui {
             position: absolute;
             bottom: 40px;
             left: 0;
@@ -99,585 +101,713 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
+            z-index: 20;
+            pointer-events: none;
             padding: 0 20px;
         }
-        #counter {
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            padding: 10px 24px;
-            border-radius: 40px;
-            font-size: 18px;
+        #ui > * {
+            pointer-events: auto;
+        }
+        #progress-bar {
+            width: 90%;
+            max-width: 400px;
+            height: 6px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #00ff88, #00ccff);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        #status-text {
+            font-size: 14px;
+            color: rgba(255,255,255,0.8);
+            background: rgba(0,0,0,0.6);
+            padding: 8px 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
             font-weight: 500;
-            letter-spacing: 0.3px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            color: #fff;
+            letter-spacing: 0.5px;
             text-align: center;
-            width: fit-content;
-            margin: 0 auto;
         }
-        #counter span {
-            color: #34c759;
-            font-weight: 600;
-        }
-        .btn-group {
+        #btn-panel {
             display: flex;
+            gap: 15px;
             flex-wrap: wrap;
             justify-content: center;
-            gap: 14px;
-            width: 100%;
-            max-width: 420px;
+            pointer-events: auto;
         }
         .btn {
-            background: rgba(255, 255, 255, 0.12);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 40px;
-            padding: 14px 28px;
-            font-size: 17px;
-            font-weight: 600;
-            color: #fff;
+            padding: 12px 28px;
+            border: none;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: 700;
             cursor: pointer;
             transition: all 0.2s ease;
-            flex: 1;
-            min-width: 130px;
-            text-align: center;
-            letter-spacing: 0.5px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: 2px solid rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            min-width: 120px;
         }
         .btn:active {
-            transform: scale(0.94);
-            opacity: 0.8;
+            transform: scale(0.95);
         }
         .btn-primary {
-            background: #007aff;
-            border-color: #007aff;
-            color: #fff;
+            background: #00ccff;
+            color: #000;
+            border-color: #00ccff;
+            box-shadow: 0 0 30px rgba(0, 204, 255, 0.3);
         }
-        .btn-primary:disabled {
-            opacity: 0.5;
-            transform: none;
+        .btn-primary:active {
+            box-shadow: 0 0 60px rgba(0, 204, 255, 0.5);
         }
         .btn-success {
-            background: #34c759;
-            border-color: #34c759;
+            background: #00ff88;
+            color: #000;
+            border-color: #00ff88;
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.3);
         }
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.15);
+        .btn-danger {
+            background: #ff4466;
+            color: #fff;
+            border-color: #ff4466;
         }
         .btn:disabled {
             opacity: 0.4;
-            transform: none;
             pointer-events: none;
         }
-        #status-msg {
-            font-size: 14px;
-            color: rgba(255, 255, 255, 0.6);
-            text-align: center;
-            background: rgba(0,0,0,0.3);
-            padding: 6px 16px;
-            border-radius: 30px;
-            backdrop-filter: blur(4px);
-            min-height: 30px;
-        }
-        @media (max-width: 480px) {
-            .btn { padding: 12px 16px; font-size: 15px; min-width: 100px; }
-            #counter { font-size: 15px; padding: 8px 18px; }
-        }
-        #loader {
+        #result-panel {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8);
-            backdrop-filter: blur(8px);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 100;
             display: none;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            z-index: 100;
-            flex-direction: column;
-            gap: 20px;
+            padding: 20px;
+            overflow-y: auto;
+            backdrop-filter: blur(20px);
         }
-        #loader.active {
+        #result-panel.show {
             display: flex;
         }
-        #loader .spinner {
-            width: 48px;
-            height: 48px;
-            border: 4px solid rgba(255,255,255,0.2);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+        #result-panel h2 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00ff88, #00ccff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        #loader p {
-            font-size: 18px;
-            font-weight: 400;
-            letter-spacing: 0.3px;
-            text-align: center;
-            padding: 0 20px;
+        #result-panel .sub {
+            color: rgba(255,255,255,0.6);
+            font-size: 14px;
+            margin-bottom: 20px;
         }
-        .toast {
-            position: fixed;
-            bottom: 100px;
+        #panorama-result {
+            max-width: 100%;
+            max-height: 40vh;
+            border-radius: 12px;
+            border: 2px solid rgba(255,255,255,0.1);
+            margin-bottom: 20px;
+            object-fit: contain;
+            background: #111;
+        }
+        #thumbnails {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            max-width: 600px;
+            max-height: 30vh;
+            overflow-y: auto;
+            padding: 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+        }
+        #thumbnails img {
+            width: 70px;
+            height: 70px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid rgba(255,255,255,0.1);
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+        #thumbnails img:hover {
+            transform: scale(1.1);
+        }
+        #result-btns {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .btn-close {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.2);
+            color: #fff;
+        }
+        .btn-download {
+            background: #00ff88;
+            color: #000;
+            border-color: #00ff88;
+        }
+        #guide-text {
+            position: absolute;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(0,0,0,0.75);
-            backdrop-filter: blur(8px);
-            padding: 12px 28px;
-            border-radius: 40px;
-            font-size: 16px;
-            z-index: 50;
+            z-index: 15;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.1);
+            text-align: center;
+            white-space: nowrap;
             pointer-events: none;
-            transition: opacity 0.3s;
+        }
+        @media (max-width: 600px) {
+            .target-dot {
+                width: 60px;
+                height: 60px;
+            }
+            .target-dot .num {
+                font-size: 16px;
+            }
+            .btn {
+                padding: 10px 20px;
+                font-size: 14px;
+                min-width: 90px;
+            }
+            #guide-text {
+                font-size: 12px;
+                padding: 6px 14px;
+                top: 10px;
+            }
         }
     </style>
 </head>
 <body>
-    <video id="video" autoplay playsinline></video>
-    <canvas id="three-canvas"></canvas>
 
-    <div class="ui-overlay" id="ui">
-        <div id="crosshair"><div class="crosshair-dot"></div></div>
-        <div id="ui-bottom">
-            <div id="counter">📸 Собрано: <span id="captured-count">0</span> / 26</div>
-            <div class="btn-group">
-                <button class="btn btn-primary" id="btn-start">▶ Начать сканирование</button>
-                <button class="btn btn-success" id="btn-export" disabled>⬇ Скачать куб</button>
+    <div id="camera-container">
+        <video id="video" autoplay playsinline></video>
+        <div id="overlay"></div>
+        <div id="guide-text">📸 Наведи камеру на кружок → автосъёмка</div>
+        
+        <!-- Сюда будут динамически добавляться кружки -->
+        <div id="dots-container"></div>
+
+        <div id="ui">
+            <div id="progress-bar">
+                <div id="progress-fill"></div>
             </div>
-            <div id="status-msg">Нажмите «Начать сканирование»</div>
+            <div id="status-text">Готов к съёмке</div>
+            <div id="btn-panel">
+                <button class="btn btn-danger" id="btn-reset">↺ Сброс</button>
+                <button class="btn btn-primary" id="btn-auto">▶ Авто</button>
+                <button class="btn btn-success" id="btn-finish">✅ Завершить</button>
+            </div>
         </div>
     </div>
 
-    <div id="loader">
-        <div class="spinner"></div>
-        <p id="loader-text">Запуск...</p>
+    <!-- Панель результата -->
+    <div id="result-panel">
+        <h2>🎉 Панорама готова!</h2>
+        <p class="sub">Склеенная панорама + все оригинальные кадры</p>
+        <img id="panorama-result" src="" alt="Панорама">
+        <div id="thumbnails"></div>
+        <div id="result-btns">
+            <button class="btn btn-download" id="btn-download-all">📥 Скачать всё (ZIP)</button>
+            <button class="btn btn-close" id="btn-close-result">✕ Закрыть</button>
+        </div>
     </div>
-    <div id="toast" class="toast" style="opacity:0;">Готово</div>
 
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.126.0/build/three.module.js"
-            }
-        }
-    </script>
+    <script>
+        (function() {
+            'use strict';
 
-    <script type="module">
-        import * as THREE from 'three';
+            // ---------- Конфигурация ----------
+            const TOTAL_SHOTS = 8; // Количество кружков (кадров)
+            const CAPTURE_DELAY = 300; // мс задержки для стабилизации
+            const DOT_RADIUS = 60; // радиус зоны захвата (пикселей)
 
-        // --- DOM refs ---
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('three-canvas');
-        const loader = document.getElementById('loader');
-        const loaderText = document.getElementById('loader-text');
-        const toast = document.getElementById('toast');
-        const statusMsg = document.getElementById('status-msg');
-        const capturedSpan = document.getElementById('captured-count');
-        const btnStart = document.getElementById('btn-start');
-        const btnExport = document.getElementById('btn-export');
+            // ---------- Состояние ----------
+            let photos = []; // массив { blob, url, index }
+            let captured = new Array(TOTAL_SHOTS).fill(false);
+            let videoStream = null;
+            let isAutoMode = false;
+            let autoTimer = null;
+            let isCapturing = false;
+            let isInitialized = false;
 
-        // --- state ---
-        let cameraReady = false;
-        let captureEnabled = false;
-        let captures = [];
-        const TARGET_COUNT = 26;
-        let capturedCount = 0;
-        let scene, camera, renderer;
-        let targetMeshes = [];
-        let cameraDummy, sphereGroup;
-        let isCapturing = false;
-        let orientationReady = false;
+            // DOM
+            const video = document.getElementById('video');
+            const dotsContainer = document.getElementById('dots-container');
+            const progressFill = document.getElementById('progress-fill');
+            const statusText = document.getElementById('status-text');
+            const btnReset = document.getElementById('btn-reset');
+            const btnAuto = document.getElementById('btn-auto');
+            const btnFinish = document.getElementById('btn-finish');
+            const resultPanel = document.getElementById('result-panel');
+            const panoramaImg = document.getElementById('panorama-result');
+            const thumbnailsDiv = document.getElementById('thumbnails');
+            const btnCloseResult = document.getElementById('btn-close-result');
+            const btnDownloadAll = document.getElementById('btn-download-all');
+            const guideText = document.getElementById('guide-text');
 
-        // --- helpers ---
-        function showToast(msg, duration = 2000) {
-            toast.textContent = msg;
-            toast.style.opacity = '1';
-            clearTimeout(toast._timer);
-            toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, duration);
-        }
-
-        function updateUI() {
-            capturedSpan.textContent = capturedCount;
-            btnExport.disabled = (capturedCount < 26);
-            if (capturedCount === 26) {
-                statusMsg.textContent = '✅ Все цели собраны! Скачайте кубическую карту.';
-            } else if (capturedCount > 0) {
-                statusMsg.textContent = `🎯 Осталось целей: ${26 - capturedCount}`;
-            }
-        }
-
-        function setLoader(active, text = 'Запуск...') {
-            if (active) {
-                loader.classList.add('active');
-                loaderText.textContent = text;
-            } else {
-                loader.classList.remove('active');
-            }
-        }
-
-        // --- three.js setup ---
-        function initThree() {
-            scene = new THREE.Scene();
-            scene.background = null;
-
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: canvas,
-                alpha: true,
-                antialias: true
-            });
-            renderer.setSize(width, height);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-            camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 1000);
-            camera.position.set(0, 0, 0);
-
-            sphereGroup = new THREE.Group();
-            scene.add(sphereGroup);
-
-            cameraDummy = new THREE.Object3D();
-            scene.add(cameraDummy);
-            cameraDummy.add(camera);
-            camera.position.set(0, 0, 0);
-
-            createTargets();
-
-            window.addEventListener('resize', onResize);
-        }
-
-        function createTargets() {
-            const radius = 6;
-            const geometry = new THREE.SphereGeometry(0.35, 16, 16);
-            const positions = [];
-
-            // экватор: 10 точек
-            for (let i = 0; i < 10; i++) {
-                const theta = (i / 10) * Math.PI * 2;
-                const phi = Math.PI / 2;
-                positions.push(new THREE.Vector3(
-                    radius * Math.sin(phi) * Math.cos(theta),
-                    radius * Math.cos(phi),
-                    radius * Math.sin(phi) * Math.sin(theta)
-                ));
-            }
-            // верхний ярус: 8 точек
-            for (let i = 0; i < 8; i++) {
-                const theta = (i / 8) * Math.PI * 2;
-                const phi = Math.PI / 2 - 0.6;
-                positions.push(new THREE.Vector3(
-                    radius * Math.sin(phi) * Math.cos(theta),
-                    radius * Math.cos(phi),
-                    radius * Math.sin(phi) * Math.sin(theta)
-                ));
-            }
-            // нижний ярус: 8 точек
-            for (let i = 0; i < 8; i++) {
-                const theta = (i / 8) * Math.PI * 2;
-                const phi = Math.PI / 2 + 0.6;
-                positions.push(new THREE.Vector3(
-                    radius * Math.sin(phi) * Math.cos(theta),
-                    radius * Math.cos(phi),
-                    radius * Math.sin(phi) * Math.sin(theta)
-                ));
-            }
-
-            positions.forEach((pos) => {
-                const material = new THREE.MeshStandardMaterial({
-                    color: 0x007aff,
-                    emissive: 0x007aff,
-                    emissiveIntensity: 0.3,
-                    roughness: 0.2,
-                    metalness: 0.1
-                });
-                const mesh = new THREE.Mesh(geometry, material);
-                mesh.position.copy(pos);
-                mesh.userData.initialPos = pos.clone();
-                mesh.userData.captured = false;
-                sphereGroup.add(mesh);
-                targetMeshes.push(mesh);
-            });
-
-            const ambient = new THREE.AmbientLight(0x404060);
-            scene.add(ambient);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(1, 2, 1);
-            scene.add(dirLight);
-            const backLight = new THREE.DirectionalLight(0x4466ff, 0.3);
-            backLight.position.set(-1, -0.5, -1);
-            scene.add(backLight);
-        }
-
-        function onResize() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            renderer.setSize(width, height);
-        }
-
-        // --- работа с гироскопом ---
-        function handleOrientation(ev) {
-            if (!cameraReady) return;
-            const alpha = ev.alpha || 0;
-            const beta = ev.beta || 0;
-            const gamma = ev.gamma || 0;
-
-            const q = new THREE.Quaternion();
-            const euler = new THREE.Euler();
-            euler.set(
-                THREE.MathUtils.degToRad(beta),
-                THREE.MathUtils.degToRad(alpha),
-                THREE.MathUtils.degToRad(-gamma),
-                'YXZ'
-            );
-            q.setFromEuler(euler);
-            cameraDummy.quaternion.copy(q);
-            
-            if (!orientationReady) {
-                orientationReady = true;
-                setLoader(false);
-                showToast('Гироскоп активирован', 1500);
-            }
-        }
-
-        // --- захват кадра ---
-        function captureFrame(targetMesh) {
-            if (isCapturing || !video.videoWidth) return;
-            isCapturing = true;
-
-            const w = Math.min(video.videoWidth, 1920);
-            const h = Math.min(video.videoHeight, 1080);
-            const canvas2 = document.createElement('canvas');
-            canvas2.width = w;
-            canvas2.height = h;
-            const ctx = canvas2.getContext('2d');
-            ctx.drawImage(video, 0, 0, w, h);
-            
-            const texture = new THREE.CanvasTexture(canvas2);
-            texture.needsUpdate = true;
-
-            const planeGeo = new THREE.PlaneGeometry(1.8, 1.8);
-            const planeMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
-            const plane = new THREE.Mesh(planeGeo, planeMat);
-            const pos = targetMesh.userData.initialPos.clone();
-            plane.position.copy(pos);
-            const dir = pos.clone().normalize();
-            plane.quaternion.setFromUnitVectors(
-                new THREE.Vector3(0, 0, 1),
-                dir
-            );
-            sphereGroup.add(plane);
-
-            targetMesh.material.color.setHex(0x34c759);
-            targetMesh.material.emissive.setHex(0x34c759);
-            targetMesh.userData.captured = true;
-            
-            captures.push({ pos: pos, texture: texture, plane: plane, mesh: targetMesh });
-            capturedCount++;
-            updateUI();
-
-            showToast(`📸 Захвачено! ${capturedCount}/26`, 1200);
-            isCapturing = false;
-        }
-
-        // --- проверка прицела ---
-        function checkAim() {
-            if (!captureEnabled || capturedCount >= 26) return;
-
-            const raycaster = new THREE.Raycaster();
-            const center = new THREE.Vector2(0, 0);
-            raycaster.setFromCamera(center, camera);
-
-            const targets = targetMeshes.filter(m => !m.userData.captured);
-            if (targets.length === 0) return;
-
-            const intersects = raycaster.intersectObjects(targets);
-            if (intersects.length > 0) {
-                const hit = intersects[0].object;
-                const angle = intersects[0].angle;
-                if (angle < 0.0524) {
-                    captureFrame(hit);
-                }
-            }
-        }
-
-        // --- Экспорт кубической карты ---
-        function exportCubeMap() {
-            if (capturedCount < 26) {
-                showToast('Соберите все 26 кадров!', 2000);
-                return;
-            }
-
-            setLoader(true, 'Генерация кубической карты...');
-            
-            setTimeout(() => {
+            // ---------- Инициализация камеры ----------
+            async function initCamera() {
                 try {
-                    const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(1024, {
-                        format: THREE.RGBAFormat,
-                        generateMipmaps: false,
-                        minFilter: THREE.LinearFilter,
-                        magFilter: THREE.LinearFilter,
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            facingMode: 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        },
+                        audio: false
                     });
-
-                    const tempScene = new THREE.Scene();
-                    const tempGroup = new THREE.Group();
-                    captures.forEach(cap => {
-                        const plane = cap.plane.clone();
-                        tempGroup.add(plane);
-                    });
-                    tempScene.add(tempGroup);
-
-                    const cubeCamera = new THREE.CubeCamera(0.1, 1000, cubeRenderTarget);
-                    cubeCamera.position.set(0, 0, 0);
-                    cubeCamera.updateMatrixWorld();
-                    cubeCamera.update(renderer, tempScene);
-
-                    const names = ['right', 'left', 'up', 'down', 'front', 'back'];
-                    const faces = ['px', 'nx', 'py', 'ny', 'pz', 'nz'];
-
-                    faces.forEach((face, idx) => {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = 1024;
-                        canvas.height = 1024;
-                        const ctx = canvas.getContext('2d');
-                        const imgData = cubeRenderTarget.texture.image[face];
-                        if (imgData) {
-                            ctx.putImageData(imgData, 0, 0);
-                            const link = document.createElement('a');
-                            link.download = `${names[idx]}.png`;
-                            link.href = canvas.toDataURL('image/png');
-                            link.click();
-                        }
-                    });
-
-                    setLoader(false);
-                    showToast('✅ 6 файлов куб-карты скачаны!', 4000);
-                } catch (e) {
-                    setLoader(false);
-                    showToast('Ошибка экспорта: ' + e.message, 3000);
-                    console.error(e);
-                }
-            }, 300);
-        }
-
-        // --- инициализация камеры ---
-        async function startCamera() {
-            try {
-                setLoader(true, 'Запрос доступа к камере...');
-                
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1920 },
-                        height: { ideal: 1080 }
-                    },
-                    audio: false
-                });
-                
-                video.srcObject = stream;
-                await video.play();
-                cameraReady = true;
-                
-                setLoader(true, 'Ожидание гироскопа...');
-                statusMsg.textContent = 'Поворачивайте телефон для калибровки...';
-                
-                // Ждем первый сигнал гироскопа (максимум 5 секунд)
-                let waitCount = 0;
-                const waitInterval = setInterval(() => {
-                    waitCount++;
-                    if (orientationReady || waitCount > 50) {
-                        clearInterval(waitInterval);
-                        if (!orientationReady) {
-                            setLoader(false);
-                            showToast('⚠️ Гироскоп не доступен, но камера работает', 2500);
-                        }
-                        captureEnabled = true;
-                        btnStart.textContent = '✅ Активно';
-                        btnStart.disabled = true;
-                        statusMsg.textContent = 'Наводите прицел на синие цели';
-                        showToast('Камера готова!', 1500);
-                    }
-                }, 100);
-                
-            } catch (err) {
-                setLoader(false);
-                alert('Ошибка доступа к камере: ' + err.message);
-                btnStart.disabled = false;
-                btnStart.textContent = '▶ Начать сканирование';
-                statusMsg.textContent = '❌ Ошибка камеры: ' + err.message;
-            }
-        }
-
-        async function requestOrientation() {
-            if (typeof DeviceOrientationEvent !== 'undefined' && 
-                typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try {
-                    setLoader(true, 'Запрос разрешения гироскопа...');
-                    const perm = await DeviceOrientationEvent.requestPermission();
-                    if (perm === 'granted') {
-                        window.addEventListener('deviceorientation', handleOrientation);
-                        return true;
-                    } else {
-                        alert('Разрешение гироскопа необходимо для работы');
-                        return false;
-                    }
-                } catch (e) {
-                    console.warn('requestPermission error', e);
-                    window.addEventListener('deviceorientation', handleOrientation);
+                    videoStream = stream;
+                    video.srcObject = stream;
+                    await video.play();
+                    isInitialized = true;
+                    updateStatus('Камера готова. Наводи на кружки!');
+                    generateDots();
                     return true;
+                } catch (err) {
+                    console.error('Ошибка камеры:', err);
+                    updateStatus('❌ Не удалось получить доступ к камере');
+                    alert('Пожалуйста, разрешите доступ к камере и обновите страницу.');
+                    return false;
                 }
-            } else {
-                window.addEventListener('deviceorientation', handleOrientation);
-                return true;
-            }
-        }
-
-        // --- UI ---
-        btnStart.addEventListener('click', async () => {
-            btnStart.disabled = true;
-            btnStart.textContent = '⏳ Запуск...';
-            
-            // Сначала запрашиваем гироскоп
-            const orientOk = await requestOrientation();
-            if (!orientOk) {
-                btnStart.disabled = false;
-                btnStart.textContent = '▶ Начать сканирование';
-                return;
-            }
-            
-            // Затем камеру
-            await startCamera();
-        });
-
-        btnExport.addEventListener('click', exportCubeMap);
-
-        // --- loop ---
-        function animate() {
-            requestAnimationFrame(animate);
-
-            if (cameraReady && captureEnabled) {
-                checkAim();
             }
 
-            renderer.render(scene, camera);
-        }
+            // ---------- Генерация кружков (сетка) ----------
+            function generateDots() {
+                dotsContainer.innerHTML = '';
+                const positions = getGridPositions(TOTAL_SHOTS);
+                for (let i = 0; i < TOTAL_SHOTS; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = 'target-dot';
+                    dot.dataset.index = i;
+                    dot.style.left = positions[i].x + '%';
+                    dot.style.top = positions[i].y + '%';
+                    dot.innerHTML = `<span class="num">${i + 1}</span><span class="status-icon">⏳</span>`;
+                    dotsContainer.appendChild(dot);
+                }
+                updateDotsUI();
+            }
 
-        // --- start ---
-        initThree();
-        animate();
-        updateUI();
+            // Позиции кружков по спирали/сетке (для равномерного покрытия)
+            function getGridPositions(count) {
+                const positions = [];
+                // Спираль Фибоначчи или равномерная сетка
+                const cols = Math.ceil(Math.sqrt(count));
+                const rows = Math.ceil(count / cols);
+                const margin = 12; // отступ от края %
+                const spacingX = (100 - margin * 2) / (cols + 1);
+                const spacingY = (100 - margin * 2) / (rows + 1);
+                let idx = 0;
+                for (let r = 0; r < rows && idx < count; r++) {
+                    for (let c = 0; c < cols && idx < count; c++) {
+                        const x = margin + spacingX * (c + 1);
+                        const y = margin + spacingY * (r + 1);
+                        // Немного случайного смещения для естественности
+                        const jitter = 0.8;
+                        positions.push({
+                            x: x + (Math.random() - 0.5) * spacingX * jitter,
+                            y: y + (Math.random() - 0.5) * spacingY * jitter
+                        });
+                        idx++;
+                    }
+                }
+                return positions;
+            }
 
-        // Если ориентация уже доступна без разрешения (десктоп)
-        if (window.DeviceOrientationEvent && 
-            typeof DeviceOrientationEvent.requestPermission !== 'function') {
-            window.addEventListener('deviceorientation', handleOrientation);
-        }
+            // ---------- Обновление UI кружков ----------
+            function updateDotsUI() {
+                const dots = dotsContainer.querySelectorAll('.target-dot');
+                let doneCount = 0;
+                dots.forEach((dot, i) => {
+                    dot.className = 'target-dot';
+                    if (captured[i]) {
+                        dot.classList.add('done');
+                        dot.querySelector('.status-icon').textContent = '✅';
+                        doneCount++;
+                    } else {
+                        dot.querySelector('.status-icon').textContent = '⏳';
+                    }
+                });
+                const progress = (doneCount / TOTAL_SHOTS) * 100;
+                progressFill.style.width = progress + '%';
+                if (doneCount === TOTAL_SHOTS) {
+                    updateStatus('✅ Все кадры сняты! Нажми "Завершить"');
+                    guideText.textContent = '🎉 Все кружки заполнены!';
+                } else {
+                    updateStatus(`Снято ${doneCount}/${TOTAL_SHOTS} кадров`);
+                }
+                return doneCount;
+            }
 
-        console.log('Мобильный 360 сканер готов');
+            // ---------- Проверка, находится ли центр экрана на кружке ----------
+            function checkDotOverlap() {
+                if (!video.videoWidth) return null;
+                const rect = video.getBoundingClientRect();
+                const cx = rect.width / 2;
+                const cy = rect.height / 2;
+
+                const dots = dotsContainer.querySelectorAll('.target-dot');
+                let closest = null;
+                let minDist = Infinity;
+
+                dots.forEach((dot) => {
+                    const i = parseInt(dot.dataset.index);
+                    if (captured[i]) return; // уже снято
+
+                    const dotRect = dot.getBoundingClientRect();
+                    const dotCx = dotRect.left + dotRect.width / 2;
+                    const dotCy = dotRect.top + dotRect.height / 2;
+                    const dist = Math.hypot(dotCx - cx, dotCy - cy);
+                    const radius = DOT_RADIUS * (rect.width / 800); // адаптивный радиус
+
+                    if (dist < radius && dist < minDist) {
+                        minDist = dist;
+                        closest = i;
+                    }
+                });
+
+                return closest;
+            }
+
+            // ---------- Съёмка кадра ----------
+            async function captureShot(index) {
+                if (isCapturing) return false;
+                if (captured[index]) return false;
+                if (!video.videoWidth) return false;
+
+                isCapturing = true;
+                const dot = dotsContainer.querySelector(`.target-dot[data-index="${index}"]`);
+                if (dot) dot.classList.add('active');
+
+                updateStatus(`📸 Съёмка кадра ${index + 1}...`);
+
+                // Небольшая задержка для стабилизации
+                await new Promise(r => setTimeout(r, CAPTURE_DELAY));
+
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    // Зеркальное отображение (как в видео)
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+                    if (!blob) throw new Error('Не удалось создать blob');
+
+                    const url = URL.createObjectURL(blob);
+                    photos.push({ blob, url, index });
+                    captured[index] = true;
+
+                    if (dot) {
+                        dot.classList.remove('active');
+                        dot.classList.add('done');
+                        dot.querySelector('.status-icon').textContent = '✅';
+                    }
+
+                    const doneCount = updateDotsUI();
+                    if (doneCount === TOTAL_SHOTS) {
+                        guideText.textContent = '🎉 Все кружки заполнены!';
+                    }
+
+                    isCapturing = false;
+                    return true;
+                } catch (err) {
+                    console.error('Ошибка съёмки:', err);
+                    if (dot) dot.classList.remove('active');
+                    isCapturing = false;
+                    updateStatus(`❌ Ошибка съёмки кадра ${index + 1}`);
+                    return false;
+                }
+            }
+
+            // ---------- Автоматический режим ----------
+            function startAutoMode() {
+                if (isAutoMode) {
+                    stopAutoMode();
+                    return;
+                }
+                if (captured.every(v => v === true)) {
+                    updateStatus('Все кадры уже сняты!');
+                    return;
+                }
+                isAutoMode = true;
+                btnAuto.textContent = '⏹ Стоп';
+                btnAuto.classList.add('btn-danger');
+                btnAuto.classList.remove('btn-primary');
+                updateStatus('🔄 Авторежим: наводи на кружки...');
+                guideText.textContent = '🔄 Авторежим активен';
+
+                autoTimer = setInterval(async () => {
+                    if (isCapturing) return;
+                    const nextIndex = captured.findIndex(v => v === false);
+                    if (nextIndex === -1) {
+                        stopAutoMode();
+                        updateStatus('✅ Все кадры сняты!');
+                        guideText.textContent = '🎉 Готово!';
+                        return;
+                    }
+                    const target = checkDotOverlap();
+                    if (target !== null && !captured[target]) {
+                        await captureShot(target);
+                        // Проверяем, не закончились ли кадры
+                        if (captured.every(v => v === true)) {
+                            stopAutoMode();
+                            updateStatus('✅ Все кадры сняты!');
+                            guideText.textContent = '🎉 Готово!';
+                        }
+                    }
+                }, 400);
+            }
+
+            function stopAutoMode() {
+                isAutoMode = false;
+                if (autoTimer) {
+                    clearInterval(autoTimer);
+                    autoTimer = null;
+                }
+                btnAuto.textContent = '▶ Авто';
+                btnAuto.classList.remove('btn-danger');
+                btnAuto.classList.add('btn-primary');
+                updateStatus('Авторежим остановлен');
+                guideText.textContent = '📸 Наведи камеру на кружок → автосъёмка';
+            }
+
+            // ---------- Сборка панорамы (простейшая склейка по порядку) ----------
+            function buildPanorama() {
+                if (photos.length === 0) return null;
+                
+                // Сортируем по индексу
+                const sorted = [...photos].sort((a, b) => a.index - b.index);
+                
+                // Создаём широкую панораму: склеиваем все кадры горизонтально
+                // Для простоты берём высоту первого кадра, а ширину суммируем
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Загружаем все изображения
+                const imgs = [];
+                let totalWidth = 0;
+                let maxHeight = 0;
+                
+                return new Promise((resolve) => {
+                    let loaded = 0;
+                    sorted.forEach((photo, idx) => {
+                        const img = new Image();
+                        img.onload = function() {
+                            imgs[idx] = img;
+                            totalWidth += img.width;
+                            maxHeight = Math.max(maxHeight, img.height);
+                            loaded++;
+                            if (loaded === sorted.length) {
+                                // Все загружены — рисуем
+                                canvas.width = totalWidth;
+                                canvas.height = maxHeight;
+                                let x = 0;
+                                for (let i = 0; i < imgs.length; i++) {
+                                    const img = imgs[i];
+                                    if (!img) continue;
+                                    const y = (maxHeight - img.height) / 2;
+                                    ctx.drawImage(img, x, y, img.width, img.height);
+                                    x += img.width;
+                                }
+                                canvas.toBlob((blob) => {
+                                    if (blob) {
+                                        const url = URL.createObjectURL(blob);
+                                        resolve({ blob, url, canvas });
+                                    } else {
+                                        resolve(null);
+                                    }
+                                }, 'image/jpeg', 0.85);
+                            }
+                        };
+                        img.onerror = function() {
+                            loaded++;
+                            if (loaded === sorted.length && imgs.every(v => v !== undefined)) {
+                                // fallback
+                                resolve(null);
+                            }
+                        };
+                        img.src = photo.url;
+                    });
+                });
+            }
+
+            // ---------- Показать результат ----------
+            async function showResult() {
+                if (photos.length === 0) {
+                    alert('Сначала сделайте хотя бы один снимок!');
+                    return;
+                }
+
+                updateStatus('🔄 Собираем панораму...');
+                const panorama = await buildPanorama();
+                if (panorama) {
+                    panoramaImg.src = panorama.url;
+                } else {
+                    // fallback: показать первое фото
+                    panoramaImg.src = photos[0].url;
+                }
+
+                // Показать все миниатюры
+                thumbnailsDiv.innerHTML = '';
+                const sorted = [...photos].sort((a, b) => a.index - b.index);
+                sorted.forEach((photo) => {
+                    const img = document.createElement('img');
+                    img.src = photo.url;
+                    img.title = `Кадр ${photo.index + 1}`;
+                    img.onclick = () => window.open(photo.url, '_blank');
+                    thumbnailsDiv.appendChild(img);
+                });
+
+                resultPanel.classList.add('show');
+                updateStatus('✅ Панорама готова!');
+            }
+
+            // ---------- Скачать все файлы (ZIP) ----------
+            function downloadAll() {
+                if (photos.length === 0) {
+                    alert('Нет фото для скачивания');
+                    return;
+                }
+                // Для простоты — скачиваем по отдельности (создаём ZIP через JSZip?)
+                // Без внешних библиотек — просто скачиваем каждый файл
+                // Но пользователю удобнее одним архивом. Используем простой подход:
+                // если есть возможность, используем JSZip, но для простоты — скачиваем панораму и все фото отдельно.
+                // Сделаем простую утилиту: скачиваем панораму и все фото в папку.
+                // Просто скачаем панораму и все фото по очереди с задержкой.
+                const panoramaUrl = panoramaImg.src;
+                if (panoramaUrl && panoramaUrl !== '') {
+                    downloadFile(panoramaUrl, 'panorama_360.jpg');
+                }
+                // Скачиваем все оригиналы
+                const sorted = [...photos].sort((a, b) => a.index - b.index);
+                sorted.forEach((photo, i) => {
+                    setTimeout(() => {
+                        downloadFile(photo.url, `photo_${String(i+1).padStart(2,'0')}.jpg`);
+                    }, i * 300);
+                });
+                updateStatus('📥 Начато скачивание файлов...');
+            }
+
+            function downloadFile(url, filename) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            // ---------- Сброс ----------
+            function resetAll() {
+                stopAutoMode();
+                // Освобождаем blob URL
+                photos.forEach(p => URL.revokeObjectURL(p.url));
+                photos = [];
+                captured = new Array(TOTAL_SHOTS).fill(false);
+                isCapturing = false;
+                resultPanel.classList.remove('show');
+                generateDots();
+                updateDotsUI();
+                updateStatus('🔄 Сброшено. Начинай заново!');
+                guideText.textContent = '📸 Наведи камеру на кружок → автосъёмка';
+                progressFill.style.width = '0%';
+            }
+
+            // ---------- Обновление статуса ----------
+            function updateStatus(text) {
+                statusText.textContent = text;
+            }
+
+            // ---------- Обработчики ----------
+            btnReset.addEventListener('click', resetAll);
+            btnAuto.addEventListener('click', startAutoMode);
+            btnFinish.addEventListener('click', showResult);
+            btnCloseResult.addEventListener('click', () => {
+                resultPanel.classList.remove('show');
+            });
+            btnDownloadAll.addEventListener('click', downloadAll);
+
+            // Ручная съёмка по клику на экран (если авто выключен)
+            document.getElementById('camera-container').addEventListener('click', async (e) => {
+                if (isAutoMode) return;
+                if (isCapturing) return;
+                const target = checkDotOverlap();
+                if (target !== null && !captured[target]) {
+                    await captureShot(target);
+                    updateDotsUI();
+                } else {
+                    // Подсказка
+                    const done = captured.filter(v => v).length;
+                    if (done < TOTAL_SHOTS) {
+                        updateStatus('🔍 Наведи камеру на незаполненный кружок');
+                    }
+                }
+            });
+
+            // Для мобильных: touch
+            document.getElementById('camera-container').addEventListener('touchstart', (e) => {
+                // предотвращаем только если не авто
+                if (isAutoMode) return;
+                // имитируем клик
+                const touch = e.touches[0];
+                const target = checkDotOverlap();
+                if (target !== null && !captured[target]) {
+                    e.preventDefault();
+                    captureShot(target);
+                    updateDotsUI();
+                }
+            }, { passive: false });
+
+            // ---------- Запуск ----------
+            async function init() {
+                const ok = await initCamera();
+                if (ok) {
+                    // Добавляем дебаг: если камера есть, стартуем
+                    updateStatus('📸 Готов. Наведи на кружок!');
+                }
+            }
+
+            init();
+
+            // Обработка закрытия страницы
+            window.addEventListener('beforeunload', () => {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+                photos.forEach(p => URL.revokeObjectURL(p.url));
+            });
+
+        })();
     </script>
 </body>
 </html>
