@@ -28,6 +28,7 @@
             height: 100%;
             object-fit: cover;
             z-index: 0;
+            transform: scaleX(-1);
         }
         #three-canvas {
             position: fixed;
@@ -163,7 +164,11 @@
             background: #34c759;
             border-color: #34c759;
         }
-        .btn-success:disabled {
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .btn:disabled {
             opacity: 0.4;
             transform: none;
             pointer-events: none;
@@ -228,38 +233,6 @@
             pointer-events: none;
             transition: opacity 0.3s;
         }
-        #permission-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
-            backdrop-filter: blur(12px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 200;
-            flex-direction: column;
-            gap: 20px;
-            padding: 40px;
-            text-align: center;
-        }
-        #permission-overlay.active {
-            display: flex;
-        }
-        #permission-overlay h2 {
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-        #permission-overlay p {
-            font-size: 16px;
-            opacity: 0.7;
-            max-width: 400px;
-            line-height: 1.5;
-        }
-        #permission-overlay .btn {
-            max-width: 280px;
-            margin-top: 10px;
-        }
     </style>
 </head>
 <body>
@@ -282,13 +255,6 @@
         <div class="spinner"></div>
         <p id="loader-text">Запуск...</p>
     </div>
-
-    <div id="permission-overlay">
-        <h2>🔄 Разрешите доступ</h2>
-        <p>Для работы сканера необходимо разрешить использование датчиков движения и камеры</p>
-        <button class="btn btn-primary" id="btn-permission">Разрешить</button>
-    </div>
-
     <div id="toast" class="toast" style="opacity:0;">Готово</div>
 
     <script type="importmap">
@@ -312,8 +278,6 @@
         const capturedSpan = document.getElementById('captured-count');
         const btnStart = document.getElementById('btn-start');
         const btnExport = document.getElementById('btn-export');
-        const permissionOverlay = document.getElementById('permission-overlay');
-        const btnPermission = document.getElementById('btn-permission');
 
         // --- state ---
         let cameraReady = false;
@@ -325,8 +289,7 @@
         let targetMeshes = [];
         let cameraDummy, sphereGroup;
         let isCapturing = false;
-        let motionReady = false;
-        let motionListenerAdded = false;
+        let orientationReady = false;
 
         // --- helpers ---
         function showToast(msg, duration = 2000) {
@@ -391,7 +354,7 @@
             const geometry = new THREE.SphereGeometry(0.35, 16, 16);
             const positions = [];
 
-            // Экватор: 10 точек
+            // экватор: 10 точек
             for (let i = 0; i < 10; i++) {
                 const theta = (i / 10) * Math.PI * 2;
                 const phi = Math.PI / 2;
@@ -401,7 +364,7 @@
                     radius * Math.sin(phi) * Math.sin(theta)
                 ));
             }
-            // Верхний ярус: 8 точек
+            // верхний ярус: 8 точек
             for (let i = 0; i < 8; i++) {
                 const theta = (i / 8) * Math.PI * 2;
                 const phi = Math.PI / 2 - 0.6;
@@ -411,7 +374,7 @@
                     radius * Math.sin(phi) * Math.sin(theta)
                 ));
             }
-            // Нижний ярус: 8 точек
+            // нижний ярус: 8 точек
             for (let i = 0; i < 8; i++) {
                 const theta = (i / 8) * Math.PI * 2;
                 const phi = Math.PI / 2 + 0.6;
@@ -456,36 +419,28 @@
             renderer.setSize(width, height);
         }
 
-        // --- ПРОСТОЙ И СТАБИЛЬНЫЙ ОБРАБОТЧИК (только акселерометр) ---
-        function handleMotion(e) {
+        // --- работа с гироскопом ---
+        function handleOrientation(ev) {
             if (!cameraReady) return;
-            
-            const accel = e.accelerationIncludingGravity || { x: 0, y: 0, z: 0 };
-            const len = Math.sqrt(accel.x*accel.x + accel.y*accel.y + accel.z*accel.z);
-            if (len < 0.1) return;
-            
-            // Нормализуем
-            const ax = accel.x / len;
-            const ay = accel.y / len;
-            const az = accel.z / len;
-            
-            // Вычисляем углы наклона из акселерометра
-            const pitch = Math.atan2(-ax, Math.sqrt(ay*ay + az*az));
-            const roll = Math.atan2(ay, az);
-            
-            // Создаем кватернион ТОЛЬКО из акселерометра (стабильно!)
+            const alpha = ev.alpha || 0;
+            const beta = ev.beta || 0;
+            const gamma = ev.gamma || 0;
+
             const q = new THREE.Quaternion();
-            const euler = new THREE.Euler(pitch, 0, roll, 'YXZ');
+            const euler = new THREE.Euler();
+            euler.set(
+                THREE.MathUtils.degToRad(beta),
+                THREE.MathUtils.degToRad(alpha),
+                THREE.MathUtils.degToRad(-gamma),
+                'YXZ'
+            );
             q.setFromEuler(euler);
-            
-            // Применяем к камере
             cameraDummy.quaternion.copy(q);
             
-            if (!motionReady) {
-                motionReady = true;
+            if (!orientationReady) {
+                orientationReady = true;
                 setLoader(false);
-                showToast('✅ Датчики движения активированы', 1500);
-                statusMsg.textContent = 'Наводите прицел на синие цели';
+                showToast('Гироскоп активирован', 1500);
             }
         }
 
@@ -544,7 +499,7 @@
             if (intersects.length > 0) {
                 const hit = intersects[0].object;
                 const angle = intersects[0].angle;
-                if (angle < 0.0524) { // ~3 градуса
+                if (angle < 0.0524) {
                     captureFrame(hit);
                 }
             }
@@ -627,33 +582,26 @@
                 await video.play();
                 cameraReady = true;
                 
-                if (!motionListenerAdded) {
-                    window.addEventListener('devicemotion', handleMotion);
-                    motionListenerAdded = true;
-                }
-                
-                setLoader(true, 'Ожидание датчиков движения...');
+                setLoader(true, 'Ожидание гироскопа...');
                 statusMsg.textContent = 'Поворачивайте телефон для калибровки...';
                 
+                // Ждем первый сигнал гироскопа (максимум 5 секунд)
                 let waitCount = 0;
                 const waitInterval = setInterval(() => {
                     waitCount++;
-                    if (motionReady || waitCount > 30) {
+                    if (orientationReady || waitCount > 50) {
                         clearInterval(waitInterval);
-                        if (!motionReady) {
+                        if (!orientationReady) {
                             setLoader(false);
-                            showToast('⚠️ Датчики не активны, но камера работает', 2500);
-                            statusMsg.textContent = 'Попробуйте повернуть телефон';
+                            showToast('⚠️ Гироскоп не доступен, но камера работает', 2500);
                         }
                         captureEnabled = true;
                         btnStart.textContent = '✅ Активно';
                         btnStart.disabled = true;
-                        if (motionReady) {
-                            statusMsg.textContent = 'Наводите прицел на синие цели';
-                        }
+                        statusMsg.textContent = 'Наводите прицел на синие цели';
                         showToast('Камера готова!', 1500);
                     }
-                }, 200);
+                }, 100);
                 
             } catch (err) {
                 setLoader(false);
@@ -664,39 +612,28 @@
             }
         }
 
-        // --- Запрос разрешения для DeviceMotionEvent ---
-        async function requestMotionPermission() {
-            return new Promise((resolve) => {
-                if (typeof DeviceMotionEvent !== 'undefined' && 
-                    typeof DeviceMotionEvent.requestPermission === 'function') {
-                    
-                    permissionOverlay.classList.add('active');
-                    
-                    btnPermission.onclick = async () => {
-                        try {
-                            permissionOverlay.classList.remove('active');
-                            setLoader(true, 'Запрос разрешения датчиков...');
-                            
-                            const response = await DeviceMotionEvent.requestPermission();
-                            if (response === 'granted') {
-                                window.addEventListener('devicemotion', handleMotion);
-                                motionListenerAdded = true;
-                                resolve(true);
-                            } else {
-                                alert('Для работы необходим доступ к датчикам движения');
-                                resolve(false);
-                            }
-                        } catch (e) {
-                            console.error('Permission error:', e);
-                            resolve(false);
-                        }
-                    };
-                } else {
-                    window.addEventListener('devicemotion', handleMotion);
-                    motionListenerAdded = true;
-                    resolve(true);
+        async function requestOrientation() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && 
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    setLoader(true, 'Запрос разрешения гироскопа...');
+                    const perm = await DeviceOrientationEvent.requestPermission();
+                    if (perm === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        return true;
+                    } else {
+                        alert('Разрешение гироскопа необходимо для работы');
+                        return false;
+                    }
+                } catch (e) {
+                    console.warn('requestPermission error', e);
+                    window.addEventListener('deviceorientation', handleOrientation);
+                    return true;
                 }
-            });
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation);
+                return true;
+            }
         }
 
         // --- UI ---
@@ -704,14 +641,15 @@
             btnStart.disabled = true;
             btnStart.textContent = '⏳ Запуск...';
             
-            const motionOk = await requestMotionPermission();
-            if (!motionOk) {
+            // Сначала запрашиваем гироскоп
+            const orientOk = await requestOrientation();
+            if (!orientOk) {
                 btnStart.disabled = false;
                 btnStart.textContent = '▶ Начать сканирование';
-                showToast('❌ Нет доступа к датчикам', 3000);
                 return;
             }
             
+            // Затем камеру
             await startCamera();
         });
 
@@ -732,6 +670,12 @@
         initThree();
         animate();
         updateUI();
+
+        // Если ориентация уже доступна без разрешения (десктоп)
+        if (window.DeviceOrientationEvent && 
+            typeof DeviceOrientationEvent.requestPermission !== 'function') {
+            window.addEventListener('deviceorientation', handleOrientation);
+        }
 
         console.log('Мобильный 360 сканер готов');
     </script>
